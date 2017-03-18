@@ -2,7 +2,7 @@ package name.ebastien.spark
 
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, SaveMode}
 
 import org.apache.spark.ml.classification.LogisticRegression
 
@@ -59,7 +59,7 @@ object Hi {
                        .sum("gross")
                        .sort($"sum(gross)".desc)
 
-    actors.coalesce(1).write.csv("hdfs://hdfs/tmp/actors.csv")
+    actors.coalesce(1).write.mode(SaveMode.Overwrite).csv("hdfs://hdfs/tmp/actors.csv")
 
     println("=== STOP ===")
 
