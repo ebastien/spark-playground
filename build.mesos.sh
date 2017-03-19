@@ -1,7 +1,13 @@
-cp -f ${MESOS_SANDBOX}/hdfs-site.xml ${MESOS_SANDBOX}/core-site.xml ${HADOOP_CONF_DIR}/
+#!/bin/bash
+
+set -e -x 
 
 NEXUS_SERVICE_PORT=10111
 NEXUS_BASEURL="http://marathon-lb.marathon.mesos:${NEXUS_SERVICE_PORT}/repository"
+
+PROJECT_NAME="playground"
+PROJECT_VERSION="0.1.0"
+PROJECT_ARCHIVE="${PROJECT_NAME}-${PROJECT_VERSION}.tgz"
 
 cat > repositories <<EOF
 [repositories]
@@ -17,14 +23,6 @@ EOF
   -Dsbt.repository.config=${WORKSPACE}/repositories \
   universal:packageZipTarball
 
-tar xzf ./target/universal/playground-0.1.0.tgz
-
-/opt/spark/dist/bin/spark-submit \
-  --master mesos://master.mesos:5050 \
-  --class name.ebastien.spark.Hi \
-  --executor-memory 1G \
-  --total-executor-cores 6 \
-  --conf spark.mesos.coarse=true \
-  --conf spark.mesos.executor.docker.image=mesosphere/spark:1.0.7-2.1.0-hadoop-2.6 \
-  --conf spark.mesos.executor.home=/opt/spark/dist \
-  ${WORKSPACE}/playground-0.1.0/lib/name.ebastien.spark.playground-0.1.0.jar
+curl -v -T \
+  "${WORKSPACE}/target/universal/${PROJECT_ARCHIVE}" \
+  "${NEXUS_BASEURL}/site-archive/jars/"
