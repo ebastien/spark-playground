@@ -44,22 +44,26 @@ object TestStreamingRegression {
       Subscribe[String, Array[Byte]](Array(topic), consParams)
     )
 
-    // Make use of Kafka Connect schema and envelop
-    val converter = new JsonConverter()
-    converter.configure(Map().asJava, false)
-
     // Transform the RDD of Kafka records to a RDD of points (label and features).
     // As the algorithm does not learn the intercept we must add it as a feature.
-    val points = stream.flatMap {
-      record => for {
-        message <- Option(converter.toConnectData(topic, record.value))
-        if message.schema == Schema.STRING_SCHEMA
-        value <- Option(message.value.asInstanceOf[String])
-        val row = value.split(",").flatMap(f => Option(f.toDouble))
-        if row.size >= 2
-        val label = row.head
-        val features = Array(1.0) ++ row.tail
-      } yield LabeledPoint(label, Vectors.dense(features))
+    // As JsonConverter is not serializable it is initialized on each partition.
+    val points = stream.mapPartitions { iter =>
+
+      // Make use of Kafka Connect schema and envelop
+      val converter = new JsonConverter()
+      converter.configure(Map().asJava, false)
+
+      iter.flatMap {
+        record => for {
+          message <- Option(converter.toConnectData(topic, record.value))
+          if message.schema == Schema.STRING_SCHEMA
+          value <- Option(message.value.asInstanceOf[String])
+          val row = value.split(",").flatMap(f => Option(f.toDouble))
+          if row.size >= 2
+          val label = row.head
+          val features = Array(1.0) ++ row.tail
+        } yield LabeledPoint(label, Vectors.dense(features))
+      }
     }
 
     // Initialize the linear regression model and algorithm
