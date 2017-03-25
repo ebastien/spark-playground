@@ -77,6 +77,11 @@ object TestStreamingRegression {
     model.trainOn(points)
 
     // Generate our own output
+    stream.foreachRDD { rdd =>
+      println("Records: " + rdd.count)
+    }
+
+    // Generate our own output
     points.foreachRDD { rdd =>
       val n = rdd.count
       println("Samples: " + n + " / Weights: " + model.latestModel.weights)
