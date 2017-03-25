@@ -2,6 +2,9 @@ package name.ebastien.spark
 
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.common.serialization.ByteArrayDeserializer
+import org.apache.kafka.connect.data.Schema
+import org.apache.kafka.connect.json.JsonConverter
 
 import org.apache.spark._
 import org.apache.spark.streaming._
@@ -25,7 +28,7 @@ object TestStreamingRegression {
     val consParams = Map[String, Object](
       "bootstrap.servers" -> "broker.confluent-kafka.l4lb.thisdcos.directory:9092",
       "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
+      "value.deserializer" -> classOf[ByteArrayDeserializer],
       "group.id" -> "my_group",
       "auto.offset.reset" -> "earliest",
       "enable.auto.commit" -> (false: java.lang.Boolean)
@@ -35,26 +38,28 @@ object TestStreamingRegression {
     val topic = "test-connect-test"
 
     // We use a direct Kafka stream (low-level Kafka API)
-    val stream = KafkaUtils.createDirectStream[String, String](
+    val stream = KafkaUtils.createDirectStream[String, Array[Byte]](
       ssc,
       PreferConsistent,
-      Subscribe[String, String](Array(topic), consParams)
+      Subscribe[String, Array[Byte]](Array(topic), consParams)
     )
 
+    // Make use of Kafka Connect schema and envelop
+    val converter = new JsonConverter()
+    converter.configure(Map().asJava, false)
+
     // Transform the RDD of Kafka records to a RDD of points (label and features).
+    // As the algorithm does not learn the intercept we must add it as a feature.
     val points = stream.flatMap {
-      s => try {
-        val sample = s.value.split(",")
-        val label = sample.head.toDouble
-        // As the algorithm does not learn the intercept we must add it as a feature.
-        val features = Array(1.0) ++ sample.tail.map(_.toDouble)
-        if (features.size == 2)
-            Option(LabeledPoint(label, Vectors.dense(features)))
-        else
-            None
-      } catch {
-        case _ : java.lang.NumberFormatException => None
-      }
+      record => for {
+        message <- Option(converter.toConnectData(topic, record.value))
+        if message.schema == Schema.STRING_SCHEMA
+        value <- Option(message.value.asInstanceOf[String])
+        val row = value.split(",").flatMap(f => Option(f.toDouble))
+        if row.size >= 2
+        val label = row.head
+        val features = Array(1.0) ++ row.tail
+      } yield LabeledPoint(label, Vectors.dense(features))
     }
 
     // Initialize the linear regression model and algorithm
@@ -76,7 +81,7 @@ object TestStreamingRegression {
     println("=== START ===")
 
     ssc.start()
-    ssc.awaitTermination()
+    ssc.awaitTerminationOrTimeout(600000)
     ssc.stop(true, true)
 
     println("=== STOP ===")
