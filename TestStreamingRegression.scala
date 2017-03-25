@@ -29,7 +29,7 @@ object TestStreamingRegression {
       "bootstrap.servers" -> "broker.confluent-kafka.l4lb.thisdcos.directory:9092",
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[ByteArrayDeserializer],
-      "group.id" -> "my_group",
+      "group.id" -> "TestStreamingRegression",
       "auto.offset.reset" -> "earliest",
       "enable.auto.commit" -> (false: java.lang.Boolean)
     )
