@@ -38,7 +38,7 @@ case class Movie(
   )
 
 
-object Hi {
+object TestSparkSQL {
   def main(args: Array[String]) = {
     val spark = SparkSession
       .builder()

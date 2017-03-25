@@ -2,9 +2,6 @@
 
 set -e -x 
 
-NEXUS_SERVICE_PORT=10111
-NEXUS_BASEURL="http://marathon-lb.marathon.mesos:${NEXUS_SERVICE_PORT}/repository"
-
 PROJECT_NAME="playground"
 PROJECT_VERSION="0.1.0"
 PROJECT_ARCHIVE="${PROJECT_NAME}-${PROJECT_VERSION}.tgz"

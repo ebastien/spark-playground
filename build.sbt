@@ -3,7 +3,8 @@ enablePlugins(JavaAppPackaging)
 
 val spark = Seq(
     "org.apache.spark" %% "spark-core" % "2.1.0",
-    "org.apache.spark" %% "spark-mllib" % "2.1.0"
+    "org.apache.spark" %% "spark-mllib" % "2.1.0",
+    "org.apache.spark" %% "spark-streaming-kafka-0-10" % "2.1.0"
   )
 
 lazy val commonSettings = Seq(
