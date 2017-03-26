@@ -1,10 +1,6 @@
 package name.ebastien.spark
 
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.{SparkSession, SaveMode}
-
-import org.apache.spark.ml.classification.LogisticRegression
 
 case class Movie(
     color: String,
