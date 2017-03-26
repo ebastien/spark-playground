@@ -120,7 +120,7 @@ object TestStreamingRegression {
         label = row.head
         features = Array(1.0) ++ row.tail
       } yield LabeledPoint(label, Vectors.dense(features))
-    }
+    }.cache()
 
     // Initialize the linear regression model and algorithm
     val model = new StreamingLinearRegressionWithSGD().
