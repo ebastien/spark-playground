@@ -8,6 +8,8 @@ PROJECT_PACKAGE="name.ebastien.spark"
 PROJECT_CLASS=$1
 PROJECT_ARCHIVE="${PROJECT_NAME}-${PROJECT_VERSION}.tgz"
 
+shift
+
 curl -v -O "${NEXUS_BASEURL}/site-archive/jars/${PROJECT_ARCHIVE}"
 
 tar xvzf "./${PROJECT_ARCHIVE}"
@@ -29,4 +31,4 @@ SPARK_JARS="${PROJECT_JARS[*]}"
   --conf spark.mesos.executor.docker.image=mesosphere/spark:1.0.7-2.1.0-hadoop-2.6 \
   --conf spark.mesos.executor.home=/opt/spark/dist \
   --jars "${SPARK_JARS}" \
-  "${PROJECT_LIBPATH}/${PROJECT_PACKAGE}.${PROJECT_NAME}-${PROJECT_VERSION}.jar"
+  "${PROJECT_LIBPATH}/${PROJECT_PACKAGE}.${PROJECT_NAME}-${PROJECT_VERSION}.jar" $*
