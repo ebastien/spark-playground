@@ -35,7 +35,8 @@ object TestStreamingRegression {
     )
 
     // Kafka topic where the test Kafka connector is pushing logs
-    val topic = "test-connect-test"
+    val topic = if (args.size >= 1) args(0)
+                else "test-connect-test"
 
     // We use a direct Kafka stream (low-level Kafka API)
     val stream = KafkaUtils.createDirectStream[String, Array[Byte]](
