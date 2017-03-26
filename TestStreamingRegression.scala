@@ -1,8 +1,10 @@
 package name.ebastien.spark
 
+import java.util.concurrent.Future
+
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord, RecordMetadata}
 import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.kafka.common.serialization.ByteArrayDeserializer
+import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer}
 import org.apache.kafka.connect.data.Schema
 import org.apache.kafka.connect.json.JsonConverter
 
@@ -19,7 +21,7 @@ import org.apache.spark.mllib.regression.StreamingLinearRegressionWithSGD
 import collection.JavaConverters._
 
 /**
- * Converter parses a Kafka ConsumerRecord through a lazy
+ * Converter parses a Kafka ConsumerRecord with a lazy
  * Kafka Connect JSON converter.
  */
 class Converter(topic: String) {
@@ -42,11 +44,17 @@ class Converter(topic: String) {
 /**
  * KafkaSink sends values back to Kafka.
  */
-class KafkaSink(topic: String) {
+class KafkaSink[K, V](topic: String, config: Map[String, Object]) {
 
-  lazy val producer = ???
+  lazy val producer = {
+    val p = new KafkaProducer[K, V](config.asJava)
+    sys.addShutdownHook(p.close())
+    p
+  }
 
-  def send[T](value: T) : Unit = {}
+  def send(value: V) : Future[RecordMetadata] = {
+    producer.send(new ProducerRecord[K, V](topic, value))
+  }
 }
 
 /**
@@ -55,46 +63,61 @@ class KafkaSink(topic: String) {
 object TestStreamingRegression {
   def main(args: Array[String]) = {
 
-    if (args.size < 2)
+    if (args.size < 3)
       throw new RuntimeException("Invalid arguments")
 
-    val inputTopic :: outputTopic :: _ = args.toList
+    val brokers :: inputTopic :: outputTopic :: _ = args.toList
 
     val conf = new SparkConf().setAppName("Spark Streaming basic example")
     val ssc = new StreamingContext(conf, Seconds(10))
 
     // Kafka consumer parameters
     val consParams = Map[String, Object](
-      "bootstrap.servers" -> "broker.confluent-kafka.l4lb.thisdcos.directory:9092",
-      "key.deserializer" -> classOf[StringDeserializer],
+      "bootstrap.servers" -> brokers,
+      "key.deserializer" -> classOf[ByteArrayDeserializer],
       "value.deserializer" -> classOf[ByteArrayDeserializer],
       "group.id" -> "TestStreamingRegression",
       "auto.offset.reset" -> "earliest",
       "enable.auto.commit" -> (false: java.lang.Boolean)
     )
 
-    // We use a direct Kafka stream (low-level Kafka API)
-    val stream = KafkaUtils.createDirectStream[String, Array[Byte]](
-      ssc,
-      PreferConsistent,
-      Subscribe[String, Array[Byte]](Array(inputTopic), consParams)
+    // Kafka producer parameters
+    val prodParams = Map[String, Object](
+      "bootstrap.servers" -> brokers,
+      "key.serializer" -> classOf[ByteArraySerializer],
+      "value.serializer" -> classOf[ByteArraySerializer]
     )
 
-    // As JsonConverter is not serializable maintains some caches
+    // As JsonConverter is not serializable and maintains some caches
     // it is wrapped in a lazy instance and broadcasted to each node.
     val converter = ssc.sparkContext.broadcast(new Converter(inputTopic))
 
-    val sink = ssc.sparkContext.broadcast(new KafkaSink(outputTopic))
+    // The Kafka Producer is broadcasted to all nodes in a similar manner.
+    val sink = ssc.sparkContext.broadcast(
+      new KafkaSink[String, String](outputTopic, prodParams)
+    )
+
+    // We use a direct Kafka stream (low-level Kafka API)
+    val stream = KafkaUtils.createDirectStream[Array[Byte], Array[Byte]](
+      ssc,
+      PreferConsistent,
+      Subscribe[Array[Byte], Array[Byte]](Array(inputTopic), consParams)
+    )
+
+    // Generate our own output on the stream of input records
+    stream.foreachRDD { rdd =>
+      println("Input records: " + rdd.count)
+    }
 
     // Transform the RDD of Kafka records to a RDD of points (label and features).
     // As the algorithm does not learn the intercept we must add it as a feature.
     val points = stream.flatMap { record =>
       for {
         value <- converter.value.fromRecord(record)
-        val row = value.split(",").flatMap(f => Option(f.toDouble))
+        row = value.split(",").flatMap(f => Option(f.toDouble))
         if row.size >= 2
-        val label = row.head
-        val features = Array(1.0) ++ row.tail
+        label = row.head
+        features = Array(1.0) ++ row.tail
       } yield LabeledPoint(label, Vectors.dense(features))
     }
 
@@ -105,22 +128,17 @@ object TestStreamingRegression {
                     setStepSize(1.0)
 
     // What this function does is generate an output to our RDD of points
-    // to update the model
+    // to update the linear regression model
     model.trainOn(points)
 
-    // Generate our own output
-    stream.foreachRDD { rdd =>
-      println("Records: " + rdd.count)
-    }
-
-    // Generate our own output
+    // Generate our own output on the stream of points after the model update
     points.foreachRDD { rdd =>
       val n = rdd.count
-      val tetha = model.latestModel.weights
+      val theta = model.latestModel.weights
 
-      println("Samples: " + n + " / Tetha: " + tetha)
+      println("Examples: " + n + " / Theta: " + theta)
 
-      sink.value.send(tetha)
+      sink.value.send(theta.toArray.mkString(",")); ()
     }
 
     println("=== START ===")
