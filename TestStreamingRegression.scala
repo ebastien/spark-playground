@@ -4,7 +4,8 @@ import java.util.concurrent.Future
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord, RecordMetadata}
 import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer}
+import org.apache.kafka.common.serialization.ByteArrayDeserializer
+import org.apache.kafka.common.serialization.StringSerializer
 import org.apache.kafka.connect.data.Schema
 import org.apache.kafka.connect.json.JsonConverter
 
@@ -24,7 +25,7 @@ import collection.JavaConverters._
  * Converter parses a Kafka ConsumerRecord with a lazy
  * Kafka Connect JSON converter.
  */
-class Converter(topic: String) {
+class Converter(topic: String) extends Serializable {
 
   lazy val converter = {
     val c = new JsonConverter()
@@ -44,7 +45,7 @@ class Converter(topic: String) {
 /**
  * KafkaSink sends values back to Kafka.
  */
-class KafkaSink[K, V](topic: String, config: Map[String, Object]) {
+class KafkaSink[K, V](topic: String, config: Map[String, Object]) extends Serializable {
 
   lazy val producer = {
     val p = new KafkaProducer[K, V](config.asJava)
@@ -84,8 +85,8 @@ object TestStreamingRegression {
     // Kafka producer parameters
     val prodParams = Map[String, Object](
       "bootstrap.servers" -> brokers,
-      "key.serializer" -> classOf[ByteArraySerializer],
-      "value.serializer" -> classOf[ByteArraySerializer]
+      "key.serializer" -> classOf[StringSerializer],
+      "value.serializer" -> classOf[StringSerializer]
     )
 
     // As JsonConverter is not serializable and maintains some caches
