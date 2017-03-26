@@ -18,8 +18,47 @@ import org.apache.spark.mllib.regression.StreamingLinearRegressionWithSGD
 
 import collection.JavaConverters._
 
+/**
+ * Converter parses a Kafka ConsumerRecord through a lazy
+ * Kafka Connect JSON converter.
+ */
+class Converter(topic: String) {
+
+  lazy val converter = {
+    val c = new JsonConverter()
+    c.configure(Map().asJava, false)
+    c
+  }
+
+  def fromRecord[K](record: ConsumerRecord[K, Array[Byte]]) : Option[String] = {
+    for {
+      data <- Option(converter.toConnectData(topic, record.value))
+      if data.schema == Schema.STRING_SCHEMA
+      value <- Option(data.value.asInstanceOf[String])
+    } yield value
+  }
+}
+
+/**
+ * KafkaSink sends values back to Kafka.
+ */
+class KafkaSink(topic: String) {
+
+  lazy val producer = ???
+
+  def send[T](value: T) : Unit = {}
+}
+
+/**
+ * TestStreamingRegression runs a linear regression on a stream of points.
+ */
 object TestStreamingRegression {
   def main(args: Array[String]) = {
+
+    if (args.size < 2)
+      throw new RuntimeException("Invalid arguments")
+
+    val inputTopic :: outputTopic :: _ = args.toList
 
     val conf = new SparkConf().setAppName("Spark Streaming basic example")
     val ssc = new StreamingContext(conf, Seconds(10))
@@ -34,37 +73,29 @@ object TestStreamingRegression {
       "enable.auto.commit" -> (false: java.lang.Boolean)
     )
 
-    // Kafka topic where the test Kafka connector is pushing logs
-    val topic = if (args.size >= 1) args(0)
-                else "test-connect-test"
-
     // We use a direct Kafka stream (low-level Kafka API)
     val stream = KafkaUtils.createDirectStream[String, Array[Byte]](
       ssc,
       PreferConsistent,
-      Subscribe[String, Array[Byte]](Array(topic), consParams)
+      Subscribe[String, Array[Byte]](Array(inputTopic), consParams)
     )
+
+    // As JsonConverter is not serializable maintains some caches
+    // it is wrapped in a lazy instance and broadcasted to each node.
+    val converter = ssc.sparkContext.broadcast(new Converter(inputTopic))
+
+    val sink = ssc.sparkContext.broadcast(new KafkaSink(outputTopic))
 
     // Transform the RDD of Kafka records to a RDD of points (label and features).
     // As the algorithm does not learn the intercept we must add it as a feature.
-    // As JsonConverter is not serializable it is initialized on each partition.
-    val points = stream.mapPartitions { iter =>
-
-      // Make use of Kafka Connect schema and envelop
-      val converter = new JsonConverter()
-      converter.configure(Map().asJava, false)
-
-      iter.flatMap {
-        record => for {
-          message <- Option(converter.toConnectData(topic, record.value))
-          if message.schema == Schema.STRING_SCHEMA
-          value <- Option(message.value.asInstanceOf[String])
-          val row = value.split(",").flatMap(f => Option(f.toDouble))
-          if row.size >= 2
-          val label = row.head
-          val features = Array(1.0) ++ row.tail
-        } yield LabeledPoint(label, Vectors.dense(features))
-      }
+    val points = stream.flatMap { record =>
+      for {
+        value <- converter.value.fromRecord(record)
+        val row = value.split(",").flatMap(f => Option(f.toDouble))
+        if row.size >= 2
+        val label = row.head
+        val features = Array(1.0) ++ row.tail
+      } yield LabeledPoint(label, Vectors.dense(features))
     }
 
     // Initialize the linear regression model and algorithm
@@ -85,7 +116,11 @@ object TestStreamingRegression {
     // Generate our own output
     points.foreachRDD { rdd =>
       val n = rdd.count
-      println("Samples: " + n + " / Weights: " + model.latestModel.weights)
+      val tetha = model.latestModel.weights
+
+      println("Samples: " + n + " / Tetha: " + tetha)
+
+      sink.value.send(tetha)
     }
 
     println("=== START ===")
