@@ -133,13 +133,17 @@ object TestStreamingRegression {
     model.trainOn(points)
 
     // Generate our own output on the stream of points after the model update
-    points.foreachRDD { rdd =>
+    points.foreachRDD { (rdd, time) =>
       val n = rdd.count
       val theta = model.latestModel.weights
 
       println("Examples: " + n + " / Theta: " + theta)
 
-      sink.value.send(theta.toArray.mkString(",")); ()
+      val modelKey = time.toString
+      val modelValue = theta.toArray.mkString(",")
+      sink.value.send(
+        s"""{ "key": "${modelKey}", "value": "${modelValue}" }"""
+      ); ()
     }
 
     println("=== START ===")
